@@ -2,7 +2,7 @@ main :: () {
     w := Window.create_window(800, 600, "Aseprite Loader");
     Simp.set_render_target(w);
 
-    animation := LoadAnimation("bad_apple.aseprite");
+    animation := LoadAnimation("bad_apple_grayscale.aseprite");
 
     before := seconds_since_init();
 

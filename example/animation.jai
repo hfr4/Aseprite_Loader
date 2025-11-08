@@ -25,7 +25,7 @@ LoadAnimation :: (filepath: string) -> Animation {
     for frame : aseprite.frames {
         bitmap: Simp.Bitmap;
 
-        Simp.bitmap_alloc(*bitmap, aseprite.header.width, aseprite.header.height, .RGBA8);
+        Simp.bitmap_alloc(*bitmap, aseprite.header.w, aseprite.header.h, .RGBA8);
         defer Simp.deinit(*bitmap);
 
         for * bitmap.data  it.* = 0;
@@ -35,7 +35,7 @@ LoadAnimation :: (filepath: string) -> Animation {
                 x := cel.x + (it_index % cel.w);
                 y := cel.y + (it_index / cel.w);
 
-                i := (x + y * aseprite.header.width) * 4;
+                i := (x + y * aseprite.header.w) * 4;
 
                 bg := Vector4.{ xx bitmap.data[i+0], xx bitmap.data[i+1], xx bitmap.data[i+2], xx bitmap.data[i+3] };
                 fg := Vector4.{ xx pixel.r         , xx pixel.g         , xx pixel.b         , xx pixel.a          };
@@ -50,7 +50,7 @@ LoadAnimation :: (filepath: string) -> Animation {
         }
 
         anim_frame := array_add(*animation.frames);
-        anim_frame.duration = frame.header.frameDuration / 1000.0;
+        anim_frame.duration = frame.header.frame_duration / 1000.0;
         anim_frame.texture  = New(Simp.Texture);
 
         loaded := Simp.texture_load_from_bitmap(anim_frame.texture, *bitmap);

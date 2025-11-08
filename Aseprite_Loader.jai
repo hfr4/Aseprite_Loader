@@ -1,4 +1,4 @@
-// Specs : https://github.com/aseprite/aseprite/blob/main/docs/ase-file-specs.md
+// Aseprite File Format (.ase/.aseprite) Specifications : https://github.com/aseprite/aseprite/blob/main/docs/ase-file-specs.md
 
 Aseprite_File :: struct {
     header : Aseprite_File_Header;
@@ -8,12 +8,18 @@ Aseprite_File :: struct {
 }
 
 Aseprite_File_Header :: struct {
-    fileSize   : u32;
-    frameCount : u16;
-    width      : u16;
-    height     : u16;
-    colorDepth : u16;
-    flags      : Aseprite_File_Header_Flags;
+    file_size   : u32;
+    magic       : u16;
+    frame_count : u16;
+    w, h        : u16;
+    color_depth : Aseprite_File_Header_Color_Depth;
+    flags       : Aseprite_File_Header_Flags;
+}
+
+Aseprite_File_Header_Color_Depth :: enum u16 {
+    INDEXED   :: 8;
+    GRAYSCALE :: 16;
+    RGBA      :: 32;
 }
 
 Aseprite_File_Header_Flags :: enum_flags u32 {
@@ -28,22 +34,21 @@ Frame :: struct {
 }
 
 Frame_Header :: struct {
-    frameSize     : u32;
-    chunkCountOld : u16;
-    frameDuration : u16;
-    chunkCountNew : u32;
+    frame_size      : u32;
+    magic           : u16;
+    chunk_count_old : u16;
+    frame_duration  : u16;
+    chunk_count_new : u32;
 }
 
 Cel :: struct {
-    kind       : Cel_Kind;
-    layerIndex : u16;
-    x          : s16;
-    y          : s16;
-    w          : u16;
-    h          : u16;
-    opacity    : u8;
-    userdata   : Userdata;
-    pixels     : [..] Color;
+    kind        : Cel_Kind;
+    layer_index : u16;
+    x, y        : s16;
+    w, h        : u16;
+    opacity     : u8;
+    userdata    : Userdata;
+    pixels      : [..] Color;
 }
 
 Cel_Kind :: enum u16 {
@@ -54,13 +59,13 @@ Cel_Kind :: enum u16 {
 }
 
 Layer :: struct {
-    kind       : Layer_Kind;
-    flags      : Layer_Flags;
-    childLevel : u16;
-    blendMode  : Layer_Blend_Mode;
-    opacity    : u8;
-    name       : string;
-    userdata   : Userdata;
+    kind        : Layer_Kind;
+    flags       : Layer_Flags;
+    child_level : u16;
+    blend_mode  : Layer_Blend_Mode;
+    opacity     : u8;
+    name        : string;
+    userdata    : Userdata;
 }
 
 Layer_Kind :: enum u16 {
@@ -101,13 +106,12 @@ Layer_Blend_Mode :: enum u16 {
     DIVIDE      :: 18;
 }
 
-Tag ::struct {
-    name          : string;
-    loopDirection : Tag_Loop_Directions;
-    repeatCount   : u16;
-    from          : u16;
-    to            : u16;
-    userdata      : Userdata;
+Tag :: struct {
+    name           : string;
+    loop_direction : Tag_Loop_Directions;
+    repeat_count   : u16;
+    from, to       : u16;
+    userdata       : Userdata;
 }
 
 Tag_Loop_Directions :: enum {
@@ -146,7 +150,7 @@ Userdata_Flags :: enum_flags u32 {
 }
 
 Color :: struct {
-    r, g, b, a: u8;
+    r, g, b, a : u8;
 }
 
 load_aseprite_file :: (using aseprite: *Aseprite_File, filepath: string) -> bool {
@@ -155,45 +159,42 @@ load_aseprite_file :: (using aseprite: *Aseprite_File, filepath: string) -> bool
         print("Failed to load file %.\n", filepath);
         return false;
     }
-
     defer free(file);
 
     ReinitializeReader();
 
-    header.fileSize    = Eat(u32);
-
-    magic_number := Eat(u16);
     FILE_MAGIC_NUMBER :: 0xA5E0;
-    assert(magic_number == FILE_MAGIC_NUMBER, "Bad file magic number, expected % got %.", FILE_MAGIC_NUMBER, magic_number);
 
-    header.frameCount  = Eat(u16);
-    header.width       = Eat(u16);
-    header.height      = Eat(u16);
-    header.colorDepth  = Eat(u16);
-    assert(header.colorDepth == 32, "Grayscale and Index modes are not supported.");
-    header.flags       = Eat(Aseprite_File_Header_Flags);
+    header.file_size    = Eat(u32);
+    header.magic        = Eat(u16);
+    assert(header.magic == FILE_MAGIC_NUMBER, "Bad file magic number, expected % got %.", FILE_MAGIC_NUMBER, header.magic);
+    header.frame_count  = Eat(u16);
+    header.w            = Eat(u16);
+    header.h            = Eat(u16);
+    header.color_depth  = Eat(Aseprite_File_Header_Color_Depth);
+    header.flags        = Eat(Aseprite_File_Header_Flags);
 
     Skip(110);
 
-    for i: 0..header.frameCount - 1 {
+    for i: 0..header.frame_count - 1 {
         frame: Frame;
 
-        frame.header.frameSize     = Eat(u32);
-
-        magic_number := Eat(u16);
         FRAME_MAGIC_NUMBER :: 0xF1FA;
-        assert(magic_number == FRAME_MAGIC_NUMBER, "Bad file magic number, expected % got %.", FRAME_MAGIC_NUMBER, magic_number);
 
-        frame.header.chunkCountOld = Eat(u16);
-        frame.header.frameDuration = Eat(u16);
+        frame.header.frame_size      = Eat(u32);
+        frame.header.magic           = Eat(u16);
+        assert(frame.header.magic == FRAME_MAGIC_NUMBER, "Bad file magic number, expected % got %.", FRAME_MAGIC_NUMBER, frame.header.magic);
+        frame.header.chunk_count_old = Eat(u16);
+        frame.header.frame_duration  = Eat(u16);
         Skip(2);
-        frame.header.chunkCountNew = Eat(u32);
+        frame.header.chunk_count_new = Eat(u32);
 
         chunk_count := 0;
-        if      frame.header.chunkCountNew != 0      chunk_count = frame.header.chunkCountNew;
-        else if frame.header.chunkCountOld != 0xFFFF chunk_count = frame.header.chunkCountOld;
+        if      frame.header.chunk_count_new != 0      chunk_count = frame.header.chunk_count_new;
+        else if frame.header.chunk_count_old != 0xFFFF chunk_count = frame.header.chunk_count_old;
 
-        last_chunk: Chunk_Kind;
+        previous_chunk_kind: Chunk_Kind;
+
         for 0..chunk_count - 1 {
             chunk_start := context.aseprite_reader.cursor;
             chunk_size  := Eat(u32);
@@ -201,14 +202,14 @@ load_aseprite_file :: (using aseprite: *Aseprite_File, filepath: string) -> bool
             chunk_kind  := Eat(Chunk_Kind);
 
             if chunk_kind == {
-                case .CEL;      DecodeCelChunk();
-                case .LAYER;    DecodeLayerChunk();
-                case .TAGS;     DecodeTagsChunk();
-                case .USERDATA; DecodeUserDataChunk();
+                case .CEL;      DecodeCel();
+                case .LAYER;    DecodeLayer();
+                case .TAGS;     DecodeTags();
+                case .USERDATA; DecodeUserdata();
                 case;           Skip(chunk_end - context.aseprite_reader.cursor);
             }
 
-            last_chunk = chunk_kind;
+            previous_chunk_kind = chunk_kind;
 
             assert(context.aseprite_reader.cursor == chunk_end, "Chunk % reading error, we are at %, but should be at %.", chunk_kind, context.aseprite_reader.cursor, chunk_end);
         }
@@ -231,41 +232,41 @@ deinit :: (using aseprite: *Aseprite_File) {
 
 #scope_file
 
-DecodeCelChunk :: () #expand {
+DecodeCel :: () #expand {
     cel: Cel;
 
-    cel.layerIndex = Eat(u16);
-    cel.x          = Eat(s16);
-    cel.y          = Eat(s16);
-    cel.opacity    = Eat(u8);
-    cel.kind       = Eat(Cel_Kind);
-    assert(cel.kind == .RAW_IMAGE_DATA || cel.kind == .COMPRESSED_IMAGE, "Cel kind % not supported.", cel.kind);
+    cel.layer_index = Eat(u16);
+    cel.x           = Eat(s16);
+    cel.y           = Eat(s16);
+    cel.opacity     = Eat(u8);
+    cel.kind        = Eat(Cel_Kind);
     Skip(7);
-    cel.w          = Eat(u16);
-    cel.h          = Eat(u16);
+    cel.w           = Eat(u16);
+    cel.h           = Eat(u16);
 
     encoded_count := `chunk_end - context.aseprite_reader.cursor;
     decoded_count := cast(int) cel.w * cast(int) cel.h;
 
-    array_reserve(*cel.pixels, decoded_count);
+    color_depth := `header.color_depth;
+
     if      cel.kind == .RAW_IMAGE_DATA    EatPixelsRaw(decoded_count);
-    else if cel.kind == .COMPRESSED_IMAGE  EatPixelsZlib(encoded_count, decoded_count);
+    else if cel.kind == .COMPRESSED_IMAGE  EatPixelsCompressed(encoded_count, decoded_count);
+    else assert(false, "Cel kind % not supported.", cel.kind);
 
     array_add(*`frame.cels, cel);
 }
 
-DecodeLayerChunk :: () #expand {
+DecodeLayer :: () #expand {
     layer: Layer;
 
-    layer.flags      = Eat(Layer_Flags);
-    layer.kind       = Eat(Layer_Kind);
-    layer.childLevel = Eat(u16);
+    layer.flags       = Eat(Layer_Flags);
+    layer.kind        = Eat(Layer_Kind);
+    layer.child_level = Eat(u16);
     Skip(4);
-    layer.blendMode  = Eat(Layer_Blend_Mode);
-    layer.opacity    = Eat(u8);
+    layer.blend_mode  = Eat(Layer_Blend_Mode);
+    layer.opacity     = Eat(u8);
     Skip(3);
-    length := Eat(u16);
-    layer.name       = EatString(length);
+    layer.name        = Eat(Eat(u16));
 
     if layer.kind == .TILEMAP {
         Skip(4);
@@ -275,38 +276,31 @@ DecodeLayerChunk :: () #expand {
     array_add(*`layers, layer);
 }
 
-DecodeTagsChunk :: () #expand {
+DecodeTags :: () #expand {
     tag_count := Eat(u16);
     Skip(8);
 
     for 0..tag_count - 1 {
         tag: Tag;
 
-        tag.from             = Eat(u16);
-        tag.to               = Eat(u16);
-        tag.loopDirection    = Eat(Tag_Loop_Directions);
-        tag.repeatCount      = Eat(u16);
-        Skip(6);
-        tag.userdata.color.r = Eat(u8);           // Deprecated ?
-        tag.userdata.color.g = Eat(u8);           // Deprecated ?
-        tag.userdata.color.b = Eat(u8);           // Deprecated ?
-        tag.userdata.color.a = 255;               // Deprecated ?
-        Skip(1);
-        length := Eat(u16);
-        tag.name             = EatString(length); // Deprecated ?
+        tag.from           = Eat(u16);
+        tag.to             = Eat(u16);
+        tag.loop_direction = Eat(Tag_Loop_Directions);
+        tag.repeat_count   = Eat(u16);
+        Skip(10);
+        tag.name           = Eat(Eat(u16));
 
         array_add(*`tags, tag);
     }
 }
 
-DecodeUserDataChunk :: () #expand {
+DecodeUserdata :: () #expand {
     userdata: Userdata;
 
     userdata.flags = Eat(Userdata_Flags);
 
     if userdata.flags & .HAS_TEXT {
-        length := Eat(u16);
-        userdata.text = EatString(length);
+        userdata.text = Eat(Eat(u16));
     }
 
     if userdata.flags & .HAS_COLOR {
@@ -316,7 +310,7 @@ DecodeUserDataChunk :: () #expand {
     if userdata.flags & .HAS_PROPERTIES {
     }
 
-    if `last_chunk == {
+    if `previous_chunk_kind == {
         case .CEL;   print("Cel user data found\n");
         case .LAYER; print("Layer user data found\n");
         case .TAGS;  print("Tag user data found\n");
@@ -331,7 +325,6 @@ Aseprite_Reader :: struct {
 #add_context aseprite_reader: Aseprite_Reader;
 
 ReinitializeReader :: () #expand {
-    free(context.aseprite_reader.buffer);
     context.aseprite_reader.cursor = 0;
     context.aseprite_reader.buffer = `file;
 }
@@ -340,36 +333,63 @@ Skip :: (count: int) #expand {
     context.aseprite_reader.cursor += count;
 }
 
-Eat :: ($T: Type) -> T #expand {
-    defer context.aseprite_reader.cursor += size_of(T);
-    return (cast(*T) slice(context.aseprite_reader.buffer, context.aseprite_reader.cursor, size_of(T)).data).*;
-}
-
-EatString :: (count: int) -> string #expand {
+Eat :: (count: int) -> string #expand {
     defer context.aseprite_reader.cursor += count;
     return slice(context.aseprite_reader.buffer, context.aseprite_reader.cursor, count);
 }
 
+Eat :: ($T: Type) -> T #expand {
+    return (cast(*T) Eat(size_of(T)).data).*;
+}
+
 EatPixelsRaw :: (decoded_count: int) #expand {
-    for 0..decoded_count - 1 {
-        array_add(*`cel.pixels, .{ Eat(u8), Eat(u8), Eat(u8), Eat(u8) });
+    if `color_depth == {
+        case .RGBA;
+            for 0..decoded_count - 1 {
+                array_add(*`cel.pixels, .{ Eat(u8), Eat(u8), Eat(u8), Eat(u8) });
+            }
+
+        case .GRAYSCALE;
+            value := Eat(u8);
+            for 0..decoded_count - 1 {
+                array_add(*`cel.pixels, .{ value, value, value, Eat(u8) });
+            }
+
+        case .INDEXED;
+            assert(false, "Indexed mode not supported.");
     }
 }
 
-EatPixelsZlib :: (encoded_count: int, decoded_count: int) #expand {
-    encoded := EatString(encoded_count);
-    decoded := alloc_string(decoded_count * 4);
-
-    defer free(decoded);
-
+EatPixelsCompressed :: (encoded_count: int, decoded_count: int) #expand {
     stbi :: #import "stb_image";
-    decoded_size := stbi.stbi_zlib_decode_buffer(decoded.data, xx decoded.count, encoded.data, xx encoded.count);
 
-    assert(decoded.count == decoded_size, "Failed to decode zlib buffer.");
+    if `color_depth == {
+        case .RGBA;
+            encoded := Eat(encoded_count);
+            decoded := alloc_string(decoded_count * 4);
+            defer free(decoded);
 
-    pixels_count := decoded.count / 4;
-    for 0..pixels_count - 1 {
-        array_add(*`cel.pixels, .{ decoded.data[it*4], decoded.data[it*4 + 1], decoded.data[it*4 + 2], decoded.data[it*4 + 3] });
+            decoded_size := stbi.stbi_zlib_decode_buffer(decoded.data, xx decoded.count, encoded.data, xx encoded.count);
+            assert(decoded.count == decoded_size, "Failed to decode zlib buffer.");
+
+            for 0..decoded.count / 4 - 1 {
+                array_add(*`cel.pixels, .{ decoded.data[it*4], decoded.data[it*4 + 1], decoded.data[it*4 + 2], decoded.data[it*4 + 3] });
+            }
+
+        case .GRAYSCALE;
+            encoded := Eat(encoded_count);
+            decoded := alloc_string(decoded_count * 2);
+            defer free(decoded);
+
+            decoded_size := stbi.stbi_zlib_decode_buffer(decoded.data, xx decoded.count, encoded.data, xx encoded.count);
+            assert(decoded.count == decoded_size, "Failed to decode zlib buffer.");
+
+            for 0..decoded.count / 2 - 1 {
+                array_add(*`cel.pixels, .{ decoded.data[it*2], decoded.data[it*2], decoded.data[it*2], decoded.data[it*2 + 1] });
+            }
+
+        case .INDEXED;
+            assert(false, "Indexed mode not supported.");
     }
 }
 
