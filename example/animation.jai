@@ -17,7 +17,6 @@ LoadAnimation :: (filepath: string) -> Animation {
 
     ok := Aseprite.load_aseprite_file(*aseprite, filepath);
     assert(ok, "Can't find aseprite file at %", filepath);
-
     defer Aseprite.deinit(*aseprite);
 
     animation: Animation;

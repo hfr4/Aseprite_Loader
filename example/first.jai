@@ -1,8 +1,10 @@
 main :: () {
-    w := Window.create_window(800, 600, "Aseprite Loader");
+    w := Window.create_window(1200, 900, "Aseprite Loader");
     Simp.set_render_target(w);
 
-    animation := LoadAnimation("bad_apple_grayscale.aseprite");
+    animation_rgba      := LoadAnimation("bad_apple_rgba.aseprite");
+    animation_grayscale := LoadAnimation("bad_apple_grayscale.aseprite");
+    animation_indexed   := LoadAnimation("bad_apple_indexed.aseprite");
 
     before := seconds_since_init();
 
@@ -22,13 +24,17 @@ main :: () {
             if it.type == .QUIT quit = true;
         }
 
-        Update(*animation, xx dt);
+        Update(*animation_rgba     , xx dt);
+        Update(*animation_grayscale, xx dt);
+        Update(*animation_indexed  , xx dt);
 
         {
             Simp.set_render_target(w);
             Simp.clear_render_target(0.2, 0.2, 0.2, 1);
 
-            DrawAnimationCentered(*animation, .{ 400, 300 });
+            DrawAnimationCentered(*animation_rgba     , .{ 200 , 450 });
+            DrawAnimationCentered(*animation_grayscale, .{ 600 , 450 });
+            DrawAnimationCentered(*animation_indexed  , .{ 1000, 450 });
 
             Simp.swap_buffers(w);
         }
@@ -40,12 +46,12 @@ main :: () {
 
 #load "animation.jai";
 
-Aseprite :: #import,file "../Aseprite_Loader.jai";
+Aseprite :: #import,file "../module.jai";
 
-GL     :: #import "GL";
-Window :: #import "Window_Creation";
-Simp   :: #import "Simp";
-Input  :: #import "Input";
+GL       :: #import "GL";
+Window   :: #import "Window_Creation";
+Simp     :: #import "Simp";
+Input    :: #import "Input";
 
 #import "Math";
 #import "Basic";
