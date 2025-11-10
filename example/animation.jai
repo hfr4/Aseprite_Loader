@@ -19,6 +19,26 @@ LoadAnimation :: (filepath: string) -> Animation {
     assert(ok, "Can't find aseprite file at %", filepath);
     defer Aseprite.deinit(*aseprite);
 
+    for aseprite.layers {
+        if it.userdata.flags & .HAS_TEXT  print("text : %\n", it.userdata.text);
+        if it.userdata.flags & .HAS_COLOR print("color : % \n", it.userdata.color);
+    }
+
+    for aseprite.tags {
+        if it.userdata.flags & .HAS_TEXT  print("text : %\n", it.userdata.text);
+        if it.userdata.flags & .HAS_COLOR print("color : % \n", it.userdata.color);
+    }
+
+    for aseprite.frames for it.cels {
+        if it.userdata.flags & .HAS_TEXT  print("text : %\n", it.userdata.text);
+        if it.userdata.flags & .HAS_COLOR print("color : % \n", it.userdata.color);
+    }
+
+    for aseprite.slices {
+        if it.userdata.flags & .HAS_TEXT  print("text : %\n", it.userdata.text);
+        if it.userdata.flags & .HAS_COLOR print("color : % \n", it.userdata.color);
+    }
+
     animation: Animation;
 
     for frame : aseprite.frames {

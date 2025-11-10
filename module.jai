@@ -6,6 +6,7 @@ Aseprite_File :: struct {
     frames  : [..] Frame;
     layers  : [..] Layer;
     tags    : [..] Tag;
+    slices  : [..] Slice;
 }
 
 Aseprite_File_Header :: struct {
@@ -15,8 +16,11 @@ Aseprite_File_Header :: struct {
     w, h                      : u16;
     color_depth               : Aseprite_File_Header_Color_Depth;
     flags                     : Aseprite_File_Header_Flags;
-    speed                     : u16; // Deprecated
-    transparent_palette_index : u8;  // Used for indexed sprites
+    transparent_palette_index : u8;
+    number_of_colors          : u16;
+    pixel_w, pixel_h          : u8;
+    grid_x, grid_y            : s16;
+    grid_w, grid_h            : u16;
 }
 
 Aseprite_File_Header_Color_Depth :: enum u16 {
@@ -50,8 +54,9 @@ Cel :: struct {
     x, y        : s16;
     w, h        : u16;
     opacity     : u8;
-    userdata    : Userdata;
+    z_index     : s16;
     pixels      : [..] Color;
+    userdata    : Userdata;
 }
 
 Cel_Kind :: enum u16 {
@@ -109,18 +114,36 @@ Layer_Blend_Mode :: enum u16 {
     DIVIDE      :: 18;
 }
 
+Slice :: struct {
+    flags              : Slice_Flags;
+	name               : string;
+	frame_number       : u32;
+	origin_x, origin_y : s32;
+	w, h               : u32;
+	center_x, center_y : s32;
+	center_w, center_h : u32;
+	pivot_x, pivot_y   : s32;
+	userdata           : Userdata;
+}
+
+Slice_Flags :: enum_flags u32 {
+    IS_9_PATCHES_SLICE    :: 1;
+    HAS_PIVOT_INFORMATION :: 2;
+}
+
 Tag :: struct {
     name           : string;
-    loop_direction : Tag_Loop_Directions;
+    loop_direction : Tag_Loop_Direction;
     repeat_count   : u16;
     from, to       : u16;
     userdata       : Userdata;
 }
 
-Tag_Loop_Directions :: enum u8 {
-    FORWARD  :: 0;
-    REVERSE  :: 1;
-    PINGPONG :: 2;
+Tag_Loop_Direction :: enum u8 {
+    FORWARD          :: 0;
+    REVERSE          :: 1;
+    PINGPONG         :: 2;
+    PINGPONG_REVERSE :: 3;
 }
 
 Color_Profile_Kind :: enum u16 {
@@ -189,16 +212,25 @@ load_aseprite_file :: (using aseprite: *Aseprite_File, filepath: string) -> bool
     header.file_size    = Eat(u32);
     header.magic        = Eat(u16);
     assert(header.magic == FILE_MAGIC_NUMBER, "Bad file magic number, expected % got %.", FILE_MAGIC_NUMBER, header.magic);
-    header.frame_count  = Eat(u16);
-    header.w            = Eat(u16);
-    header.h            = Eat(u16);
-    header.color_depth  = Eat(Aseprite_File_Header_Color_Depth);
-    header.flags        = Eat(Aseprite_File_Header_Flags);
-    header.speed        = Eat(u16);
+    header.frame_count = Eat(u16);
+    header.w           = Eat(u16);
+    header.h           = Eat(u16);
+    header.color_depth = Eat(Aseprite_File_Header_Color_Depth);
+    header.flags       = Eat(Aseprite_File_Header_Flags);
+    global_frame_duration := Eat(u16);
     Skip(8);
     header.transparent_palette_index = Eat(u8);
+    Skip(3);
 
-    Skip(99);
+    header.number_of_colors = Eat(u16);
+	header.pixel_w          = Eat(u8);
+	header.pixel_h          = Eat(u8);
+	header.grid_x           = Eat(s16);
+	header.grid_y           = Eat(s16);
+	header.grid_w           = Eat(u16);
+	header.grid_h           = Eat(u16);
+
+    Skip(84);
 
     for i: 0..header.frame_count - 1 {
         frame: Frame;
@@ -210,6 +242,7 @@ load_aseprite_file :: (using aseprite: *Aseprite_File, filepath: string) -> bool
         assert(frame.header.magic == FRAME_MAGIC_NUMBER, "Bad file magic number, expected % got %.", FRAME_MAGIC_NUMBER, frame.header.magic);
         frame.header.chunk_count_old = Eat(u16);
         frame.header.frame_duration  = Eat(u16);
+        if frame.header.frame_duration == 0  frame.header.frame_duration = global_frame_duration;
         Skip(2);
         frame.header.chunk_count_new = Eat(u32);
 
@@ -226,14 +259,15 @@ load_aseprite_file :: (using aseprite: *Aseprite_File, filepath: string) -> bool
             chunk_kind  := Eat(Chunk_Kind);
 
             if chunk_kind == {
-                case .COLOR_PROFILE;      DecodeColorProfile();
-                case .OLD_PALETTE_A;      DecodeOldPaletteA();
-                case .PALETTE;            DecodePalette();
-                case .CEL;                DecodeCel();
-                case .LAYER;              DecodeLayer();
-                case .TAGS;               DecodeTags();
-                case .USERDATA;           DecodeUserdata();
-                case;                     Skip(chunk_end - context.aseprite_reader.cursor);
+                case .COLOR_PROFILE;  DecodeColorProfile();
+                case .OLD_PALETTE_A;  DecodeOldPaletteA();
+                case .PALETTE;        DecodePalette();
+                case .CEL;            DecodeCel();
+                case .LAYER;          DecodeLayer();
+                case .TAGS;           DecodeTags();
+                case .SLICE;          DecodeSlice();
+                case .USERDATA;       DecodeUserdata();
+                case;                 Skip(chunk_end - context.aseprite_reader.cursor);
             }
 
             previous_chunk_kind = chunk_kind;
@@ -248,13 +282,33 @@ load_aseprite_file :: (using aseprite: *Aseprite_File, filepath: string) -> bool
 }
 
 deinit :: (using aseprite: *Aseprite_File) {
+    for layers {
+        free(it.name);
+        free(it.userdata.text);
+    }
+
+    for tags {
+        free(it.name);
+        free(it.userdata.text);
+    }
+
     for frames {
-        for it.cels array_free(it.pixels);
+        for it.cels {
+            array_free(it.pixels);
+            free(it.userdata.text);
+        }
         array_free(it.cels);
     }
-    array_free(frames);
+
+    for slices {
+        free(it.name);
+        free(it.userdata.text);
+    }
+
     array_free(layers);
     array_free(tags);
+    array_free(frames);
+    array_free(slices);
     array_free(palette.colors);
 }
 
@@ -268,7 +322,8 @@ DecodeCel :: () #expand {
     cel.y           = Eat(s16);
     cel.opacity     = Eat(u8);
     cel.kind        = Eat(Cel_Kind);
-    Skip(7);
+    cel.z_index     = Eat(s16);
+    Skip(5);
     cel.w           = Eat(u16);
     cel.h           = Eat(u16);
 
@@ -281,7 +336,7 @@ DecodeCel :: () #expand {
 
     if      cel.kind == .RAW_IMAGE_DATA    EatPixelsRaw(decoded_count);
     else if cel.kind == .COMPRESSED_IMAGE  EatPixelsCompressed(encoded_count, decoded_count);
-    else assert(false, "Cel kind % not supported.", cel.kind);
+    else                                   assert(false, "Cel kind % not supported.", cel.kind);
 
     array_add(*`frame.cels, cel);
 }
@@ -296,7 +351,7 @@ DecodeLayer :: () #expand {
     layer.blend_mode  = Eat(Layer_Blend_Mode);
     layer.opacity     = Eat(u8);
     Skip(3);
-    layer.name        = Eat(Eat(u16));
+    layer.name        = copy_string(Eat(Eat(u16)));
 
     if layer.kind == .TILEMAP {
         Skip(4);
@@ -315,10 +370,10 @@ DecodeTags :: () #expand {
 
         tag.from           = Eat(u16);
         tag.to             = Eat(u16);
-        tag.loop_direction = Eat(Tag_Loop_Directions);
+        tag.loop_direction = Eat(Tag_Loop_Direction);
         tag.repeat_count   = Eat(u16);
         Skip(10);
-        tag.name           = Eat(Eat(u16));
+        tag.name           = copy_string(Eat(Eat(u16)));
 
         array_add(*`tags, tag);
     }
@@ -330,7 +385,7 @@ DecodeUserdata :: () #expand {
     userdata.flags = Eat(Userdata_Flags);
 
     if userdata.flags & .HAS_TEXT {
-        userdata.text = Eat(Eat(u16));
+        userdata.text = copy_string(Eat(Eat(u16)));
     }
 
     if userdata.flags & .HAS_COLOR {
@@ -338,12 +393,23 @@ DecodeUserdata :: () #expand {
     }
 
     if userdata.flags & .HAS_PROPERTIES {
+        properties_size      := Eat(u32);
+        properties_map_count := Eat(u32);
+        Skip(properties_size - 8);
     }
 
     if `previous_chunk_kind == {
-        case .CEL;   print("Cel user data found\n");
-        case .LAYER; print("Layer user data found\n");
-        case .TAGS;  print("Tag user data found\n");
+        case .CEL;
+            `frame.cels[`frame.cels.count - 1].userdata = userdata;
+
+        case .LAYER;
+            `layers[`layers.count - 1].userdata = userdata;
+
+        case .TAGS;
+            `tags[`tags.count - 1].userdata = userdata;
+
+        case .SLICE;
+            `slices[`slices.count - 1].userdata = userdata;
     }
 }
 
@@ -359,7 +425,7 @@ DecodeColorProfile ::  () #expand {
 }
 
 DecodeOldPaletteA :: () #expand {
-    // Resolve the case when we have the chunks PALETTE and OLD_PALETTE_A at the same time...
+    // Hopefully resolve the case when we have the chunks PALETTE and OLD_PALETTE_A at the same time...
     new_palette_already_found := `aseprite.palette.colors.count > 0;
 
     packets_count := Eat(u16);
@@ -370,16 +436,16 @@ DecodeOldPaletteA :: () #expand {
 
         for 0..colors_count - 1 {
             color := Color.{ Eat(u8), Eat(u8), Eat(u8), 255 };
-            if !new_palette_already_found array_add(*`aseprite.palette.colors, color);
+            if !new_palette_already_found  array_add(*`aseprite.palette.colors, color);
         }
     }
 }
 
 DecodePalette :: () #expand {
-    // Resolve the case when we have the chunks PALETTE and OLD_PALETTE_A at the same time...
+    // Hopefully resolve the case when we have the chunks PALETTE and OLD_PALETTE_A at the same time...
     old_palette_already_found := `aseprite.palette.colors.count > 0;
 
-    if old_palette_already_found array_reset(*`aseprite.palette.colors);
+    if old_palette_already_found  array_reset(*`aseprite.palette.colors);
 
     palette_size := Eat(u32);
 
@@ -395,6 +461,41 @@ DecodePalette :: () #expand {
         if flags & .HAS_NAME {
             name := Eat(Eat(u16));
         }
+    }
+}
+
+DecodeSlice :: () #expand {
+    slice_count := Eat(u32);
+    slice_flags := Eat(Slice_Flags);
+
+    Skip(4);
+
+    slice_name := Eat(Eat(u16));
+
+    for 0..slice_count - 1 {
+        slice: Slice;
+
+        slice.flags        = slice_flags;
+        slice.name         = copy_string(slice_name);
+        slice.frame_number = Eat(u32);
+        slice.origin_x     = Eat(s32);
+        slice.origin_y     = Eat(s32);
+        slice.w            = Eat(u32);
+        slice.h            = Eat(u32);
+
+        if slice_flags & .IS_9_PATCHES_SLICE {
+            slice.center_x = Eat(s32);
+            slice.center_y = Eat(s32);
+            slice.center_w = Eat(u32);
+            slice.center_h = Eat(u32);
+        }
+
+        if slice_flags & .HAS_PIVOT_INFORMATION {
+            slice.pivot_x = Eat(s32);
+            slice.pivot_y = Eat(s32);
+        }
+
+        array_add(*`slices, slice);
     }
 }
 

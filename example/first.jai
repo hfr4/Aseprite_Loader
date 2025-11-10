@@ -2,9 +2,11 @@ main :: () {
     w := Window.create_window(1200, 900, "Aseprite Loader");
     Simp.set_render_target(w);
 
-    animation_rgba      := LoadAnimation("bad_apple_rgba.aseprite");
-    animation_grayscale := LoadAnimation("bad_apple_grayscale.aseprite");
-    animation_indexed   := LoadAnimation("bad_apple_indexed.aseprite");
+    animation_rgba       := LoadAnimation("bad_apple_rgba.aseprite");
+    animation_grayscale  := LoadAnimation("bad_apple_grayscale.aseprite");
+    animation_indexed    := LoadAnimation("bad_apple_indexed.aseprite");
+    animation_userdata := LoadAnimation("bad_apple_userdata.aseprite");
+    animation_slice    := LoadAnimation("bad_apple_slice.aseprite");
 
     before := seconds_since_init();
 
@@ -24,17 +26,21 @@ main :: () {
             if it.type == .QUIT quit = true;
         }
 
-        Update(*animation_rgba     , xx dt);
-        Update(*animation_grayscale, xx dt);
-        Update(*animation_indexed  , xx dt);
+        Update(*animation_rgba      , xx dt);
+        Update(*animation_grayscale , xx dt);
+        Update(*animation_indexed   , xx dt);
+        Update(*animation_userdata, xx dt);
+        Update(*animation_slice, xx dt);
 
         {
             Simp.set_render_target(w);
             Simp.clear_render_target(0.2, 0.2, 0.2, 1);
 
-            DrawAnimationCentered(*animation_rgba     , .{ 200 , 450 });
-            DrawAnimationCentered(*animation_grayscale, .{ 600 , 450 });
-            DrawAnimationCentered(*animation_indexed  , .{ 1000, 450 });
+            DrawAnimationCentered(*animation_rgba      , .{ 200 , 450 });
+            DrawAnimationCentered(*animation_grayscale , .{ 600 , 450 });
+            DrawAnimationCentered(*animation_indexed   , .{ 1000, 450 });
+            DrawAnimationCentered(*animation_userdata  , .{ 200, 200 });
+            DrawAnimationCentered(*animation_slice     , .{ 600, 200 });
 
             Simp.swap_buffers(w);
         }
