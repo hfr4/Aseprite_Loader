@@ -13,9 +13,9 @@ Frame :: struct {
 }
 
 LoadAnimation :: (filepath: string) -> Animation {
-    aseprite: Aseprite.Aseprite_File;
+    aseprite: Aseprite.Aseprite_Animation;
 
-    ok := Aseprite.load_aseprite_file(*aseprite, filepath);
+    ok := Aseprite.aseprite_load(*aseprite, filepath);
     assert(ok, "Can't find aseprite file at %", filepath);
     defer Aseprite.deinit(*aseprite);
 
@@ -41,9 +41,18 @@ LoadAnimation :: (filepath: string) -> Animation {
 
     animation: Animation;
 
+    /*
+
+    TODO : NOTE 5. https://github.com/aseprite/aseprite/blob/main/docs/ase-file-specs.md
+
+    int order() const {
+        return cel.layer_index + cel.z_index;
+    }
+
+    */
+
     for frame : aseprite.frames {
         bitmap: Simp.Bitmap;
-
         Simp.bitmap_alloc(*bitmap, aseprite.header.w, aseprite.header.h, .RGBA8);
         defer Simp.deinit(*bitmap);
 
@@ -120,9 +129,9 @@ BlendAdd :: (background: Vector4, foreground: Vector4) -> Vector4 {
     return .{ r, g, b, a };
 }
 
-DrawTextureCentered :: (texture: Simp.Texture, position := Vector2.{ 0, 0 }) {
-    w := cast(float) texture.width;
-    h := cast(float) texture.height;
+DrawTextureCentered :: (texture: Simp.Texture, position := Vector2.{ 0, 0 }, scale := 1) {
+    w := cast(float) texture.width * scale;
+    h := cast(float) texture.height * scale;
     x := position.x;
     y := position.y;
 
@@ -140,6 +149,6 @@ DrawTextureCentered :: (texture: Simp.Texture, position := Vector2.{ 0, 0 }) {
     Simp.immediate_quad(p0, p1, p2, p3, .{ 1, 1, 1, 1 });
 }
 
-DrawAnimationCentered :: (using animation: Animation, position := Vector2.{ 0, 0 }) {
-	DrawTextureCentered(frames[index].texture, position);
+DrawAnimationCentered :: (using animation: Animation, position := Vector2.{ 0, 0 }, scale := 1) {
+	DrawTextureCentered(frames[index].texture, position, scale);
 }

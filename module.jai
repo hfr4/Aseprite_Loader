@@ -1,35 +1,41 @@
-// Aseprite File Format (.ase/.aseprite) Specifications : https://github.com/aseprite/aseprite/blob/main/docs/ase-file-specs.md
 
-Aseprite_File :: struct {
-    header  : Aseprite_File_Header;
-    palette : Palette;
-    frames  : [..] Frame;
-    layers  : [..] Layer;
-    tags    : [..] Tag;
-    slices  : [..] Slice;
+// Aseprite File Format (.ase/.aseprite) Specifications :
+// https://github.com/aseprite/aseprite/blob/main/docs/ase-file-specs.md
+
+Aseprite_Animation :: struct {
+    header         : Aseprite_Animation_Header;
+    palette        : Palette;
+    color_profile  : Color_Profile;
+    frames         : [..] Frame;
+    layers         : [..] Layer;
+    slices         : [..] Slice;
+    tilesets       : [..] Tileset;
+    tags           : [..] Tag;
+    external_files : [..] External_File;
 }
 
-Aseprite_File_Header :: struct {
+Aseprite_Animation_Header :: struct {
     file_size                 : u32;
     magic                     : u16;
     frame_count               : u16;
     w, h                      : u16;
-    color_depth               : Aseprite_File_Header_Color_Depth;
-    flags                     : Aseprite_File_Header_Flags;
+    color_depth               : Aseprite_Animation_Header_Color_Depth;
+    flags                     : Aseprite_Animation_Header_Flags;
     transparent_palette_index : u8;
+    global_frame_duration     : u16;
     number_of_colors          : u16;
     pixel_w, pixel_h          : u8;
     grid_x, grid_y            : s16;
     grid_w, grid_h            : u16;
 }
 
-Aseprite_File_Header_Color_Depth :: enum u16 {
+Aseprite_Animation_Header_Color_Depth :: enum u16 {
     INDEXED   :: 8;
     GRAYSCALE :: 16;
     RGBA      :: 32;
 }
 
-Aseprite_File_Header_Flags :: enum_flags u32 {
+Aseprite_Animation_Header_Flags :: enum_flags u32 {
     LAYER_OPACITY_HAS_VALID_VALUE                    :: 1;
     LAYER_BLEND_MODE_AND_OPACITY_IS_VALID_FOR_GROUPS :: 2;
     LAYERS_HAVE_UUID                                 :: 4;
@@ -49,14 +55,21 @@ Frame_Header :: struct {
 }
 
 Cel :: struct {
-    kind        : Cel_Kind;
-    layer_index : u16;
-    x, y        : s16;
-    w, h        : u16;
-    opacity     : u8;
-    z_index     : s16;
-    pixels      : [..] Color;
-    userdata    : Userdata;
+    kind                  : Cel_Kind;
+    layer_index           : u16;
+    z_index               : s16;
+    x, y                  : s16;
+    w, h                  : u16;
+    opacity               : u8;
+    userdata              : Userdata;
+    pixels                : [..] Color;
+    linked_frame_index    : u16;
+    bits_per_tile         : u16;
+    bitmask_tile_id       : u32;
+    bitmask_x_flip        : u32;
+    bitmask_y_flip        : u32;
+    bitmask_diagonal_flip : u32;
+    tiles_data            : string;
 }
 
 Cel_Kind :: enum u16 {
@@ -67,13 +80,15 @@ Cel_Kind :: enum u16 {
 }
 
 Layer :: struct {
-    kind        : Layer_Kind;
-    flags       : Layer_Flags;
-    child_level : u16;
-    blend_mode  : Layer_Blend_Mode;
-    opacity     : u8;
-    name        : string;
-    userdata    : Userdata;
+    kind          : Layer_Kind;
+    flags         : Layer_Flags;
+    child_level   : u16;
+    blend_mode    : Layer_Blend_Mode;
+    opacity       : u8;
+    name          : string;
+    userdata      : Userdata;
+    tileset_index : u32;
+    uuid          : UUID;
 }
 
 Layer_Kind :: enum u16 {
@@ -131,6 +146,27 @@ Slice_Flags :: enum_flags u32 {
     HAS_PIVOT_INFORMATION :: 2;
 }
 
+Tileset :: struct {
+    id                       : u32;
+    flags                    : Tileset_Flags;
+    tiles_count              : u32;
+    tile_w, tile_h           : u16;
+    base_index               : s16;
+    external_file_id         : u32;
+    external_file_tileset_id : u32;
+    name                     : string;
+    pixels                   : [..] Color;
+}
+
+Tileset_Flags :: enum_flags u32 {
+    INCLUDE_LINK_TO_EXTERNAL_FILE     :: 1;
+    INCLUDE_TILES_INSIDE_THIS_FILE    :: 2;
+    TILE_ID_EQUALS_0_AS_EMPTY_TILE    :: 4;
+    MATCH_X_FLIPS_IN_AUTO_MODE        :: 8;
+    MATCH_Y_FLIPS_IN_AUTO_MODE        :: 16;
+    MATCH_DIAGONAL_FLIPS_IN_AUTO_MODE :: 32;
+}
+
 Tag :: struct {
     name           : string;
     loop_direction : Tag_Loop_Direction;
@@ -144,6 +180,13 @@ Tag_Loop_Direction :: enum u8 {
     REVERSE          :: 1;
     PINGPONG         :: 2;
     PINGPONG_REVERSE :: 3;
+}
+
+Color_Profile :: struct {
+    kind        : Color_Profile_Kind;
+    flags       : Color_Profile_Flags;
+    fixed_gamma : float32;
+    icc_profile : string;
 }
 
 Color_Profile_Kind :: enum u16 {
@@ -164,21 +207,17 @@ Palette_Color_Flags :: enum_flags u16 {
     HAS_NAME :: 1;
 }
 
-Chunk_Kind :: enum u16 {
-    OLD_PALETTE_A  :: 0x0004;
-    OLD_PALETTE_B  :: 0x0011;
-    LAYER          :: 0x2004;
-    CEL            :: 0x2005;
-    CEL_EXTRA      :: 0x2006;
-    COLOR_PROFILE  :: 0x2007;
-    EXTERNAL_FILES :: 0x2008;
-    MASK           :: 0x2016;
-    PATH           :: 0x2017;
-    TAGS           :: 0x2018;
-    PALETTE        :: 0x2019;
-    USERDATA       :: 0x2020;
-    SLICE          :: 0x2022;
-    TILESET        :: 0x2023;
+External_File :: struct {
+    id   : u32;
+    kind : External_File_Kind;
+    name : string;
+}
+
+External_File_Kind :: enum u8 {
+    EXTERNAL_PALETTE                   :: 0;
+    EXTERNAL_TILESET                   :: 1;
+    EXTENSION_NAME_FOR_PROPERTIES      :: 2;
+    EXTENSION_NAME_FOR_TILE_MANAGEMENT :: 3;
 }
 
 Userdata :: struct {
@@ -197,91 +236,84 @@ Color :: struct {
     r, g, b, a : u8;
 }
 
-load_aseprite_file :: (using aseprite: *Aseprite_File, filepath: string) -> bool {
-    file, success := read_entire_file(filepath);
-    if !success {
-        print("Failed to load file %.\n", filepath);
+UUID :: [16] u8;
+
+Chunk_Kind :: enum u16 {
+    OLD_PALETTE_A  :: 0x0004;
+    OLD_PALETTE_B  :: 0x0011;
+    LAYER          :: 0x2004;
+    CEL            :: 0x2005;
+    CEL_EXTRA      :: 0x2006;
+    COLOR_PROFILE  :: 0x2007;
+    EXTERNAL_FILES :: 0x2008;
+    MASK           :: 0x2016;
+    PATH           :: 0x2017;
+    TAGS           :: 0x2018;
+    PALETTE        :: 0x2019;
+    USERDATA       :: 0x2020;
+    SLICE          :: 0x2022;
+    TILESET        :: 0x2023;
+}
+
+aseprite_load :: (aseprite: *Aseprite_Animation, filepath: string) -> bool {
+    file, ok := read_entire_file(filepath);
+
+    if !ok {
+        log_error("Failed to load file %.\n", filepath);
         return false;
     }
+
     defer free(file);
 
-    ReinitializeReader();
+    r: Aseprite_Reader;
+    r.buffer   = file;
+    r.aseprite = aseprite;
 
-    FILE_MAGIC_NUMBER :: 0xA5E0;
+    DecodeFileHeader(*r);
 
-    header.file_size    = Eat(u32);
-    header.magic        = Eat(u16);
-    assert(header.magic == FILE_MAGIC_NUMBER, "Bad file magic number, expected % got %.", FILE_MAGIC_NUMBER, header.magic);
-    header.frame_count = Eat(u16);
-    header.w           = Eat(u16);
-    header.h           = Eat(u16);
-    header.color_depth = Eat(Aseprite_File_Header_Color_Depth);
-    header.flags       = Eat(Aseprite_File_Header_Flags);
-    global_frame_duration := Eat(u16);
-    Skip(8);
-    header.transparent_palette_index = Eat(u8);
-    Skip(3);
+    for 0..aseprite.header.frame_count - 1 {
+        frame := array_add(*aseprite.frames);
 
-    header.number_of_colors = Eat(u16);
-	header.pixel_w          = Eat(u8);
-	header.pixel_h          = Eat(u8);
-	header.grid_x           = Eat(s16);
-	header.grid_y           = Eat(s16);
-	header.grid_w           = Eat(u16);
-	header.grid_h           = Eat(u16);
-
-    Skip(84);
-
-    for i: 0..header.frame_count - 1 {
-        frame: Frame;
-
-        FRAME_MAGIC_NUMBER :: 0xF1FA;
-
-        frame.header.frame_size      = Eat(u32);
-        frame.header.magic           = Eat(u16);
-        assert(frame.header.magic == FRAME_MAGIC_NUMBER, "Bad file magic number, expected % got %.", FRAME_MAGIC_NUMBER, frame.header.magic);
-        frame.header.chunk_count_old = Eat(u16);
-        frame.header.frame_duration  = Eat(u16);
-        if frame.header.frame_duration == 0  frame.header.frame_duration = global_frame_duration;
-        Skip(2);
-        frame.header.chunk_count_new = Eat(u32);
+        DecodeFrameHeader(*r);
 
         chunk_count := 0;
-        if      frame.header.chunk_count_new != 0      chunk_count = frame.header.chunk_count_new;
+        if      frame.header.chunk_count_new != 0x0000 chunk_count = frame.header.chunk_count_new;
         else if frame.header.chunk_count_old != 0xFFFF chunk_count = frame.header.chunk_count_old;
 
-        previous_chunk_kind: Chunk_Kind;
-
         for 0..chunk_count - 1 {
-            chunk_start := context.aseprite_reader.cursor;
-            chunk_size  := Eat(u32);
-            chunk_end   := chunk_start + chunk_size;
-            chunk_kind  := Eat(Chunk_Kind);
+            r.current_chunk_start = r.cursor;
+            chunk_size := Eat(*r, u32);
+            r.current_chunk_end   = r.current_chunk_start + chunk_size;
+            r.current_chunk_kind  = Eat(*r, Chunk_Kind);
 
-            if chunk_kind == {
-                case .COLOR_PROFILE;  DecodeColorProfile();
-                case .OLD_PALETTE_A;  DecodeOldPaletteA();
-                case .PALETTE;        DecodePalette();
-                case .CEL;            DecodeCel();
-                case .LAYER;          DecodeLayer();
-                case .TAGS;           DecodeTags();
-                case .SLICE;          DecodeSlice();
-                case .USERDATA;       DecodeUserdata();
-                case;                 Skip(chunk_end - context.aseprite_reader.cursor);
+            if r.current_chunk_kind == {
+                case .OLD_PALETTE_A;  DecodeOldPalette(*r);
+                case .OLD_PALETTE_B;  DecodeOldPalette(*r);
+                case .LAYER;          DecodeLayer(*r);
+                case .CEL;            DecodeCel(*r);
+                case .COLOR_PROFILE;  DecodeColorProfile(*r);
+                case .EXTERNAL_FILES; DecodeExternalFiles(*r);
+                case .TAGS;           DecodeTags(*r);
+                case .PALETTE;        DecodeNewPalette(*r);
+                case .USERDATA;       DecodeUserdata(*r);
+                case .SLICE;          DecodeSlice(*r);
+                case .TILESET;        DecodeTileset(*r);
+                case;                 Skip(*r, r.current_chunk_end - r.cursor);
             }
 
-            previous_chunk_kind = chunk_kind;
+            r.previous_chunk_kind = r.current_chunk_kind;
 
-            assert(context.aseprite_reader.cursor == chunk_end, "Chunk % reading error, we are at %, but should be at %.", chunk_kind, context.aseprite_reader.cursor, chunk_end);
+            if r.cursor != r.current_chunk_end {
+                log_error("Chunk % reading error, we are at %, but should be at %.", r.current_chunk_kind, r.cursor, r.current_chunk_end);
+                return false;
+            }
         }
-
-        array_add(*frames, frame);
     }
 
     return true;
 }
 
-deinit :: (using aseprite: *Aseprite_File) {
+deinit :: (using aseprite: *Aseprite_Animation) {
     for layers {
         free(it.name);
         free(it.userdata.text);
@@ -296,6 +328,7 @@ deinit :: (using aseprite: *Aseprite_File) {
         for it.cels {
             array_free(it.pixels);
             free(it.userdata.text);
+            free(it.tiles_data);
         }
         array_free(it.cels);
     }
@@ -305,297 +338,421 @@ deinit :: (using aseprite: *Aseprite_File) {
         free(it.userdata.text);
     }
 
+    for tilesets {
+        array_free(it.pixels);
+        free(it.name);
+    }
+
+    for external_files {
+        free(it.name);
+    }
+
+    free(color_profile.icc_profile);
+
     array_free(layers);
     array_free(tags);
     array_free(frames);
     array_free(slices);
+    array_free(tilesets);
+    array_free(external_files);
     array_free(palette.colors);
 }
 
 #scope_file
 
-DecodeCel :: () #expand {
-    cel: Cel;
+DecodeFileHeader :: (r: *Aseprite_Reader) {
+    FILE_MAGIC_NUMBER  :: 0xA5E0;
 
-    cel.layer_index = Eat(u16);
-    cel.x           = Eat(s16);
-    cel.y           = Eat(s16);
-    cel.opacity     = Eat(u8);
-    cel.kind        = Eat(Cel_Kind);
-    cel.z_index     = Eat(s16);
-    Skip(5);
-    cel.w           = Eat(u16);
-    cel.h           = Eat(u16);
-
-    encoded_count := `chunk_end - context.aseprite_reader.cursor;
-    decoded_count := cast(int) cel.w * cast(int) cel.h;
-
-    color_depth       := `header.color_depth;
-    palette           := `aseprite.palette;
-    transparent_index := `aseprite.header.transparent_palette_index;
-
-    if      cel.kind == .RAW_IMAGE_DATA    EatPixelsRaw(decoded_count);
-    else if cel.kind == .COMPRESSED_IMAGE  EatPixelsCompressed(encoded_count, decoded_count);
-    else                                   assert(false, "Cel kind % not supported.", cel.kind);
-
-    array_add(*`frame.cels, cel);
+    r.aseprite.header.file_size                 = Eat(r, u32);
+    r.aseprite.header.magic                     = Eat(r, u16);
+    assert(r.aseprite.header.magic == FILE_MAGIC_NUMBER, "Bad file magic number");
+    r.aseprite.header.frame_count               = Eat(r, u16);
+    r.aseprite.header.w                         = Eat(r, u16);
+    r.aseprite.header.h                         = Eat(r, u16);
+    r.aseprite.header.color_depth               = Eat(r, Aseprite_Animation_Header_Color_Depth);
+    r.aseprite.header.flags                     = Eat(r, Aseprite_Animation_Header_Flags);
+    r.aseprite.header.global_frame_duration     = Eat(r, u16);
+    Skip(r, 8);
+    r.aseprite.header.transparent_palette_index = Eat(r, u8);
+    Skip(r, 3);
+    r.aseprite.header.number_of_colors          = Eat(r, u16);
+	r.aseprite.header.pixel_w                   = Eat(r, u8);
+	r.aseprite.header.pixel_h                   = Eat(r, u8);
+	r.aseprite.header.grid_x                    = Eat(r, s16);
+	r.aseprite.header.grid_y                    = Eat(r, s16);
+	r.aseprite.header.grid_w                    = Eat(r, u16);
+	r.aseprite.header.grid_h                    = Eat(r, u16);
+    Skip(r, 84);
 }
 
-DecodeLayer :: () #expand {
-    layer: Layer;
+DecodeFrameHeader :: (r: *Aseprite_Reader) {
+    FRAME_MAGIC_NUMBER :: 0xF1FA;
 
-    layer.flags       = Eat(Layer_Flags);
-    layer.kind        = Eat(Layer_Kind);
-    layer.child_level = Eat(u16);
-    Skip(4);
-    layer.blend_mode  = Eat(Layer_Blend_Mode);
-    layer.opacity     = Eat(u8);
-    Skip(3);
-    layer.name        = copy_string(Eat(Eat(u16)));
+    frame := *r.aseprite.frames[r.aseprite.frames.count - 1];
+
+    frame.header.frame_size      = Eat(r, u32);
+    frame.header.magic           = Eat(r, u16);
+    assert(frame.header.magic == FRAME_MAGIC_NUMBER, "Bad frame magic number");
+    frame.header.chunk_count_old = Eat(r, u16);
+
+    frame.header.frame_duration  = r.aseprite.header.global_frame_duration;
+    frame_duration := Eat(r, u16);
+    if frame_duration > 0  frame.header.frame_duration = frame_duration;
+
+    Skip(r, 2);
+    frame.header.chunk_count_new = Eat(r, u32);
+}
+
+DecodeCel :: (r: *Aseprite_Reader) {
+    frame := *r.aseprite.frames[r.aseprite.frames.count - 1];
+
+    cel := array_add(*frame.cels);
+
+    cel.layer_index = Eat(r, u16);
+    cel.x           = Eat(r, s16);
+    cel.y           = Eat(r, s16);
+    cel.opacity     = Eat(r, u8);
+    cel.kind        = Eat(r, Cel_Kind);
+    cel.z_index     = Eat(r, s16);
+    Skip(r, 5);
+
+    if cel.kind == {
+        case .RAW_IMAGE_DATA;
+            cel.w = Eat(r, u16);
+            cel.h = Eat(r, u16);
+
+            decoded_count := cast(int) cel.w * cast(int) cel.h;
+
+            if r.aseprite.header.color_depth == {
+                case .RGBA;
+                    for 0..decoded_count - 1 {
+                        array_add(*cel.pixels, .{ Eat(r, u8), Eat(r, u8), Eat(r, u8), Eat(r, u8) });
+                    }
+
+                case .GRAYSCALE;
+                    value := Eat(r, u8);
+                    for 0..decoded_count - 1 {
+                        array_add(*cel.pixels, .{ value, value, value, Eat(r, u8) });
+                    }
+
+                case .INDEXED;
+                    palette_index := Eat(r, u8);
+                    for 0..decoded_count - 1 {
+                        if palette_index == r.aseprite.header.transparent_palette_index {
+                            array_add(*cel.pixels, .{ 0, 0, 0, 0 });
+                        } else {
+                            array_add(*cel.pixels, r.aseprite.palette.colors[ palette_index ]);
+                        }
+                    }
+            }
+
+        case .LINKED_CEL;
+            cel.linked_frame_index = Eat(r, u16);
+
+        case .COMPRESSED_IMAGE;
+            cel.w = Eat(r, u16);
+            cel.h = Eat(r, u16);
+
+            byte_per_color := (cast(int) r.aseprite.header.color_depth / 8);
+
+            encoded_count := r.current_chunk_end - r.cursor;
+            encoded       := Eat(r, encoded_count);
+
+            decoded_count := cast(int) cel.w * cast(int) cel.h * byte_per_color;
+            decoded       := alloc_string(decoded_count);
+
+            defer free(decoded);
+
+            decoded_size := stbi_zlib_decode_buffer(decoded.data, xx decoded.count, encoded.data, xx encoded.count);
+            assert(decoded.count == decoded_size, "Failed to decode zlib buffer.");
+
+            if r.aseprite.header.color_depth == {
+                case .RGBA;
+                    for 0..decoded.count / byte_per_color - 1 {
+                        array_add(*cel.pixels, .{ decoded.data[it*4], decoded.data[it*4+1], decoded.data[it*4+2], decoded.data[it*4+3] });
+                    }
+
+                case .GRAYSCALE;
+                    for 0..decoded.count / byte_per_color - 1 {
+                        array_add(*cel.pixels, .{ decoded.data[it*2], decoded.data[it*2], decoded.data[it*2], decoded.data[it*2+1] });
+                    }
+
+                case .INDEXED;
+                    for 0..decoded.count / byte_per_color - 1 {
+                        palette_index := decoded.data[it];
+                        if palette_index == r.aseprite.header.transparent_palette_index {
+                            array_add(*cel.pixels, .{ 0, 0, 0, 0 });
+                        } else {
+                            array_add(*cel.pixels, *r.aseprite.palette.colors[ palette_index ]);
+                        }
+                    }
+            }
+
+        case .COMPRESSED_TILEMAP;
+            cel.w                     = Eat(r, u16);
+            cel.h                     = Eat(r, u16);
+            cel.bits_per_tile         = Eat(r, u16);
+            cel.bitmask_tile_id       = Eat(r, u32);
+            cel.bitmask_x_flip        = Eat(r, u32);
+            cel.bitmask_y_flip        = Eat(r, u32);
+            cel.bitmask_diagonal_flip = Eat(r, u32);
+            Skip(r, 10);
+
+            byte_per_tile := cel.bits_per_tile / 8;
+
+            encoded_count := r.current_chunk_end - r.cursor;
+            encoded       := Eat(r, encoded_count);
+
+            decoded_count := cast(int) cel.w * cast(int) cel.h * byte_per_tile;
+            decoded       := alloc_string(decoded_count);
+
+            decoded_size := stbi_zlib_decode_buffer(decoded.data, xx decoded.count, encoded.data, xx encoded.count);
+            assert(decoded.count == decoded_size, "Failed to decode zlib buffer.");
+
+            cel.tiles_data = decoded;
+    }
+}
+
+DecodeLayer :: (r: *Aseprite_Reader) {
+    layer := array_add(*r.aseprite.layers);
+
+    layer.flags       = Eat(r, Layer_Flags);
+    layer.kind        = Eat(r, Layer_Kind);
+    layer.child_level = Eat(r, u16);
+    Skip(r, 4);
+    layer.blend_mode  = Eat(r, Layer_Blend_Mode);
+    layer.opacity     = Eat(r, u8);
+    Skip(r, 3);
+    layer.name        = copy_string(Eat(r, Eat(r, u16)));
 
     if layer.kind == .TILEMAP {
-        Skip(4);
-        print("WARNING: Tileset type aseprite layers not supported.\n");
+        layer.tileset_index = Eat(r, u32);
     }
 
-    array_add(*`layers, layer);
+    if r.aseprite.header.flags & .LAYERS_HAVE_UUID {
+        layer.uuid = Eat(r, UUID);
+    }
 }
 
-DecodeTags :: () #expand {
-    tag_count := Eat(u16);
-    Skip(8);
+DecodeExternalFiles :: (r: *Aseprite_Reader) {
+    files_count := Eat(r, u32);
+    Skip(r, 8);
+
+    for 0..files_count - 1 {
+        file := array_add(*r.aseprite.external_files);
+
+        file.id   = Eat(r, u32);
+        file.kind = Eat(r, External_File_Kind);
+        Skip(r, 7);
+        file.name = copy_string(Eat(r, Eat(r, u16)));
+    }
+}
+
+DecodeTags :: (r: *Aseprite_Reader) {
+    tag_count := Eat(r, u16);
+    Skip(r, 8);
 
     for 0..tag_count - 1 {
-        tag: Tag;
+        tag := array_add(*r.aseprite.tags);
 
-        tag.from           = Eat(u16);
-        tag.to             = Eat(u16);
-        tag.loop_direction = Eat(Tag_Loop_Direction);
-        tag.repeat_count   = Eat(u16);
-        Skip(10);
-        tag.name           = copy_string(Eat(Eat(u16)));
-
-        array_add(*`tags, tag);
+        tag.from           = Eat(r, u16);
+        tag.to             = Eat(r, u16);
+        tag.loop_direction = Eat(r, Tag_Loop_Direction);
+        tag.repeat_count   = Eat(r, u16);
+        Skip(r, 10);
+        tag.name           = copy_string(Eat(r, Eat(r, u16)));
     }
 }
 
-DecodeUserdata :: () #expand {
+DecodeUserdata :: (r: *Aseprite_Reader) {
     userdata: Userdata;
 
-    userdata.flags = Eat(Userdata_Flags);
+    userdata.flags = Eat(r, Userdata_Flags);
 
     if userdata.flags & .HAS_TEXT {
-        userdata.text = copy_string(Eat(Eat(u16)));
+        userdata.text = copy_string(Eat(r, Eat(r, u16)));
     }
 
     if userdata.flags & .HAS_COLOR {
-        userdata.color = .{ Eat(u8), Eat(u8), Eat(u8), Eat(u8) };
+        userdata.color = .{ Eat(r, u8), Eat(r, u8), Eat(r, u8), Eat(r, u8) };
     }
 
     if userdata.flags & .HAS_PROPERTIES {
-        properties_size      := Eat(u32);
-        properties_map_count := Eat(u32);
-        Skip(properties_size - 8);
+        properties_size      := Eat(r, u32);
+        properties_map_count := Eat(r, u32);
+        Skip(r, properties_size - 8);
     }
 
-    if `previous_chunk_kind == {
-        case .CEL;
-            `frame.cels[`frame.cels.count - 1].userdata = userdata;
+    frame := *r.aseprite.frames[r.aseprite.frames.count - 1];
 
-        case .LAYER;
-            `layers[`layers.count - 1].userdata = userdata;
-
-        case .TAGS;
-            `tags[`tags.count - 1].userdata = userdata;
-
-        case .SLICE;
-            `slices[`slices.count - 1].userdata = userdata;
+    if r.previous_chunk_kind == {
+        case .CEL;   frame.cels[frame.cels.count - 1].userdata                = userdata;
+        case .LAYER; r.aseprite.layers[r.aseprite.layers.count - 1].userdata  = userdata;
+        case .TAGS;  r.aseprite.tags[r.aseprite.tags.count - 1].userdata      = userdata;
+        case .SLICE; r.aseprite.slices[r.aseprite.slices.count - 1].userdata  = userdata;
     }
 }
 
-DecodeColorProfile ::  () #expand {
-    color_profile_type := Eat(Color_Profile_Kind);
-    flags              := Eat(Color_Profile_Flags);
-    fixed_gamma        := Eat(float32);
-    Skip(8);
-
-    if color_profile_type == .ICC {
-        icc_profile := Eat(Eat(u32));
+DecodeColorProfile ::  (r: *Aseprite_Reader) {
+    r.aseprite.color_profile.kind        = Eat(r, Color_Profile_Kind);
+    r.aseprite.color_profile.flags       = Eat(r, Color_Profile_Flags);
+    r.aseprite.color_profile.fixed_gamma = Eat(r, float32);
+    Skip(r, 8);
+    if r.aseprite.color_profile.kind == .ICC {
+        r.aseprite.color_profile.icc_profile = copy_string(Eat(r, Eat(r, u32)));
     }
 }
 
-DecodeOldPaletteA :: () #expand {
-    // Hopefully resolve the case when we have the chunks PALETTE and OLD_PALETTE_A at the same time...
-    new_palette_already_found := `aseprite.palette.colors.count > 0;
+DecodeOldPalette :: (r: *Aseprite_Reader) {
+    if r.ignore_old_palette_chunks {
+        Skip(r, r.current_chunk_end - r.cursor);
+    } else {
+        packets_count := Eat(r, u16);
 
-    packets_count := Eat(u16);
+        for 0..packets_count - 1 {
+            skip_count   := Eat(r, u8);
+            colors_count := Eat(r, u8);
 
-    for 0..packets_count - 1 {
-        skip_count   := Eat(u8);
-        colors_count := Eat(u8);
-
-        for 0..colors_count - 1 {
-            color := Color.{ Eat(u8), Eat(u8), Eat(u8), 255 };
-            if !new_palette_already_found  array_add(*`aseprite.palette.colors, color);
+            for 0..colors_count - 1 {
+                array_add(*r.aseprite.palette.colors, .{ Eat(r, u8), Eat(r, u8), Eat(r, u8), 255 });
+            }
         }
     }
 }
 
-DecodePalette :: () #expand {
-    // Hopefully resolve the case when we have the chunks PALETTE and OLD_PALETTE_A at the same time...
-    old_palette_already_found := `aseprite.palette.colors.count > 0;
+DecodeNewPalette :: (r: *Aseprite_Reader) {
+    array_reset(*r.aseprite.palette.colors);
 
-    if old_palette_already_found  array_reset(*`aseprite.palette.colors);
+    palette_size := Eat(r, u32);
 
-    palette_size := Eat(u32);
-
-    from := Eat(u32);
-    to   := Eat(u32);
-    Skip(8);
+    from := Eat(r, u32);
+    to   := Eat(r, u32);
+    Skip(r, 8);
 
     for from..to {
-        flags := Eat(Palette_Color_Flags);
+        flags := Eat(r, Palette_Color_Flags);
 
-        array_add(*`aseprite.palette.colors, .{ Eat(u8), Eat(u8), Eat(u8), Eat(u8) });
+        array_add(*r.aseprite.palette.colors, .{ Eat(r, u8), Eat(r, u8), Eat(r, u8), Eat(r, u8) });
 
         if flags & .HAS_NAME {
-            name := Eat(Eat(u16));
+            name := Eat(r, Eat(r, u16));
         }
     }
+
+    r.ignore_old_palette_chunks = true;
 }
 
-DecodeSlice :: () #expand {
-    slice_count := Eat(u32);
-    slice_flags := Eat(Slice_Flags);
-
-    Skip(4);
-
-    slice_name := Eat(Eat(u16));
+DecodeSlice :: (r: *Aseprite_Reader) {
+    slice_count := Eat(r, u32);
+    slice_flags := Eat(r, Slice_Flags);
+    Skip(r, 4);
+    slice_name  := Eat(r, Eat(r, u16));
 
     for 0..slice_count - 1 {
-        slice: Slice;
+        slice := array_add(*r.aseprite.slices);
 
         slice.flags        = slice_flags;
         slice.name         = copy_string(slice_name);
-        slice.frame_number = Eat(u32);
-        slice.origin_x     = Eat(s32);
-        slice.origin_y     = Eat(s32);
-        slice.w            = Eat(u32);
-        slice.h            = Eat(u32);
+        slice.frame_number = Eat(r, u32);
+        slice.origin_x     = Eat(r, s32);
+        slice.origin_y     = Eat(r, s32);
+        slice.w            = Eat(r, u32);
+        slice.h            = Eat(r, u32);
 
         if slice_flags & .IS_9_PATCHES_SLICE {
-            slice.center_x = Eat(s32);
-            slice.center_y = Eat(s32);
-            slice.center_w = Eat(u32);
-            slice.center_h = Eat(u32);
+            slice.center_x = Eat(r, s32);
+            slice.center_y = Eat(r, s32);
+            slice.center_w = Eat(r, u32);
+            slice.center_h = Eat(r, u32);
         }
 
         if slice_flags & .HAS_PIVOT_INFORMATION {
-            slice.pivot_x = Eat(s32);
-            slice.pivot_y = Eat(s32);
+            slice.pivot_x = Eat(r, s32);
+            slice.pivot_y = Eat(r, s32);
         }
+    }
+}
 
-        array_add(*`slices, slice);
+DecodeTileset :: (r: *Aseprite_Reader) {
+    tileset := array_add(*r.aseprite.tilesets);
+
+    tileset.id          = Eat(r, u32);
+    tileset.flags       = Eat(r, Tileset_Flags);
+    tileset.tiles_count = Eat(r, u32);
+    tileset.tile_w      = Eat(r, u16);
+    tileset.tile_h      = Eat(r, u16);
+    tileset.base_index  = Eat(r, s16);
+    Skip(r, 14);
+    tileset.name        = copy_string(Eat(r, Eat(r, u16)));
+
+    if tileset.flags & .INCLUDE_LINK_TO_EXTERNAL_FILE {
+        tileset.external_file_id         = Eat(r, u32);
+        tileset.external_file_tileset_id = Eat(r, u32);
+    }
+
+    if tileset.flags & .INCLUDE_TILES_INSIDE_THIS_FILE {
+        byte_per_color := (cast(int) r.aseprite.header.color_depth / 8);
+
+        encoded_count  := Eat(r, u32);
+        encoded        := Eat(r, encoded_count);
+
+        decoded_count  := cast(int) tileset.tile_w * cast(int) tileset.tile_h * cast(int) tileset.tiles_count * byte_per_color;
+        decoded        := alloc_string(decoded_count);
+
+        defer free(decoded);
+
+        decoded_size := stbi_zlib_decode_buffer(decoded.data, xx decoded.count, encoded.data, xx encoded.count);
+        assert(decoded.count == decoded_size, "Failed to decode zlib buffer.");
+
+        if r.aseprite.header.color_depth == {
+            case .RGBA;
+                for 0..decoded.count / byte_per_color - 1 {
+                    array_add(*tileset.pixels, .{ decoded.data[it*4], decoded.data[it*4 + 1], decoded.data[it*4 + 2], decoded.data[it*4 + 3] });
+                }
+
+            case .GRAYSCALE;
+                for 0..decoded.count / byte_per_color - 1 {
+                    array_add(*tileset.pixels, .{ decoded.data[it*2], decoded.data[it*2], decoded.data[it*2], decoded.data[it*2 + 1] });
+                }
+
+            case .INDEXED;
+                for 0..decoded.count / byte_per_color - 1 {
+                    palette_index := decoded.data[it];
+                    if palette_index == r.aseprite.header.transparent_palette_index {
+                        array_add(*tileset.pixels, .{ 0, 0, 0, 0 });
+                    } else {
+                        array_add(*tileset.pixels, r.aseprite.palette.colors[ palette_index ]);
+                    }
+                }
+        }
     }
 }
 
 Aseprite_Reader :: struct {
-    cursor: int;
-    buffer: string;
+    cursor                    : int;
+    buffer                    : string;
+    aseprite                  : *Aseprite_Animation;
+    current_chunk_start       : int;
+    current_chunk_end         : int;
+    current_chunk_kind        : Chunk_Kind;
+    previous_chunk_kind       : Chunk_Kind;
+    ignore_old_palette_chunks : bool;
 }
 
-#add_context aseprite_reader: Aseprite_Reader;
-
-ReinitializeReader :: () #expand {
-    context.aseprite_reader.cursor = 0;
-    context.aseprite_reader.buffer = `file;
+Skip :: (r: *Aseprite_Reader, count: int) {
+    r.cursor += count;
 }
 
-Skip :: (count: int) #expand {
-    context.aseprite_reader.cursor += count;
+Eat :: (r: *Aseprite_Reader, count: int) -> string {
+    defer r.cursor += count;
+    return slice(r.buffer, r.cursor, count);
 }
 
-Eat :: (count: int) -> string #expand {
-    defer context.aseprite_reader.cursor += count;
-    return slice(context.aseprite_reader.buffer, context.aseprite_reader.cursor, count);
+Eat :: (r: *Aseprite_Reader, $T: Type) -> T {
+    return (cast(*T) Eat(r, size_of(T)).data).*;
 }
 
-Eat :: ($T: Type) -> T #expand {
-    return (cast(*T) Eat(size_of(T)).data).*;
-}
-
-EatPixelsRaw :: (decoded_count: int) #expand {
-    if `color_depth == {
-        case .RGBA;
-            for 0..decoded_count - 1 {
-                array_add(*`cel.pixels, .{ Eat(u8), Eat(u8), Eat(u8), Eat(u8) });
-            }
-
-        case .GRAYSCALE;
-            value := Eat(u8);
-            for 0..decoded_count - 1 {
-                array_add(*`cel.pixels, .{ value, value, value, Eat(u8) });
-            }
-
-        case .INDEXED;
-            palette_index := Eat(u8);
-            for 0..decoded_count - 1 {
-                if palette_index == `transparent_index {
-                    array_add(*`cel.pixels, .{ 0, 0, 0, 0 });
-                } else {
-                    array_add(*`cel.pixels, `palette.colors[ palette_index ]);
-                }
-            }
-    }
-}
-
-EatPixelsCompressed :: (encoded_count: int, decoded_count: int) #expand {
-    stbi :: #import "stb_image";
-
-    if `color_depth == {
-        case .RGBA;
-            encoded := Eat(encoded_count);
-            decoded := alloc_string(decoded_count * 4);
-            defer free(decoded);
-
-            decoded_size := stbi.stbi_zlib_decode_buffer(decoded.data, xx decoded.count, encoded.data, xx encoded.count);
-            assert(decoded.count == decoded_size, "Failed to decode zlib buffer.");
-
-            for 0..decoded.count / 4 - 1 {
-                array_add(*`cel.pixels, .{ decoded.data[it*4], decoded.data[it*4 + 1], decoded.data[it*4 + 2], decoded.data[it*4 + 3] });
-            }
-
-        case .GRAYSCALE;
-            encoded := Eat(encoded_count);
-            decoded := alloc_string(decoded_count * 2);
-            defer free(decoded);
-
-            decoded_size := stbi.stbi_zlib_decode_buffer(decoded.data, xx decoded.count, encoded.data, xx encoded.count);
-            assert(decoded.count == decoded_size, "Failed to decode zlib buffer.");
-
-            for 0..decoded.count / 2 - 1 {
-                array_add(*`cel.pixels, .{ decoded.data[it*2], decoded.data[it*2], decoded.data[it*2], decoded.data[it*2 + 1] });
-            }
-
-        case .INDEXED;
-            encoded := Eat(encoded_count);
-            decoded := alloc_string(decoded_count);
-            defer free(decoded);
-
-            decoded_size := stbi.stbi_zlib_decode_buffer(decoded.data, xx decoded.count, encoded.data, xx encoded.count);
-            assert(decoded.count == decoded_size, "Failed to decode zlib buffer.");
-
-            for 0..decoded.count - 1 {
-                palette_index := decoded.data[it];
-                if palette_index == `transparent_index {
-                    array_add(*`cel.pixels, .{ 0, 0, 0, 0 });
-                } else {
-                    array_add(*`cel.pixels, `palette.colors[ palette_index ]);
-                }
-            }
-    }
-}
-
+#import "stb_image";
 #import "String";
 #import "Basic";
 #import "File";
