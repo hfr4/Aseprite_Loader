@@ -70,6 +70,7 @@ Cel :: struct {
     bitmask_y_flip        : u32;
     bitmask_diagonal_flip : u32;
     tiles_data            : string;
+    extra                 : Cel_Extra;
 }
 
 Cel_Kind :: enum u16 {
@@ -77,6 +78,18 @@ Cel_Kind :: enum u16 {
     LINKED_CEL         :: 1;
     COMPRESSED_IMAGE   :: 2;
     COMPRESSED_TILEMAP :: 3;
+}
+
+Cel_Extra :: struct {
+    flags            : Cel_Extra_Flags;
+    precise_bounds_x : u32;
+    precise_bounds_y : u32;
+    precise_bounds_w : u32;
+    precise_bounds_h : u32;
+}
+
+Cel_Extra_Flags :: enum u32 {
+    HAS_PRECISE_BOUNDS :: 1;
 }
 
 Layer :: struct {
@@ -185,7 +198,7 @@ Tag_Loop_Direction :: enum u8 {
 Color_Profile :: struct {
     kind        : Color_Profile_Kind;
     flags       : Color_Profile_Flags;
-    fixed_gamma : float32;
+    fixed_gamma : u32;
     icc_profile : string;
 }
 
@@ -291,6 +304,7 @@ aseprite_load :: (aseprite: *Aseprite_Animation, filepath: string) -> bool {
                 case .OLD_PALETTE_B;  DecodeOldPalette(*r);
                 case .LAYER;          DecodeLayer(*r);
                 case .CEL;            DecodeCel(*r);
+                case .CEL_EXTRA;      DecodeCelExtra(*r);
                 case .COLOR_PROFILE;  DecodeColorProfile(*r);
                 case .EXTERNAL_FILES; DecodeExternalFiles(*r);
                 case .TAGS;           DecodeTags(*r);
@@ -513,6 +527,22 @@ DecodeCel :: (r: *Aseprite_Reader) {
     }
 }
 
+DecodeCelExtra :: (r: *Aseprite_Reader) {
+    assert(r.previous_chunk_kind == .CEL);
+
+    frame := *r.aseprite.frames[r.aseprite.frames.count - 1];
+    cel   := *frame.cels[frame.cels.count - 1];
+
+    cel.extra.flags = Eat(r, Cel_Extra_Flags);
+
+    if cel.extra.flags & .HAS_PRECISE_BOUNDS {
+        cel.extra.precise_bounds_x = Eat(r, u32);
+        cel.extra.precise_bounds_y = Eat(r, u32);
+        cel.extra.precise_bounds_w = Eat(r, u32);
+        cel.extra.precise_bounds_h = Eat(r, u32);
+    }
+}
+
 DecodeLayer :: (r: *Aseprite_Reader) {
     layer := array_add(*r.aseprite.layers);
 
@@ -596,7 +626,7 @@ DecodeUserdata :: (r: *Aseprite_Reader) {
 DecodeColorProfile ::  (r: *Aseprite_Reader) {
     r.aseprite.color_profile.kind        = Eat(r, Color_Profile_Kind);
     r.aseprite.color_profile.flags       = Eat(r, Color_Profile_Flags);
-    r.aseprite.color_profile.fixed_gamma = Eat(r, float32);
+    r.aseprite.color_profile.fixed_gamma = Eat(r, u32);
     Skip(r, 8);
     if r.aseprite.color_profile.kind == .ICC {
         r.aseprite.color_profile.icc_profile = copy_string(Eat(r, Eat(r, u32)));
